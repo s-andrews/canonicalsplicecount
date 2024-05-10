@@ -18,8 +18,6 @@ def main():
     for bamfile in options.bamfiles:
         counts.append(quantitate_bam_file(bamfile, genes, valid_introns))
 
-    breakpoint()
-
     write_output(options.bamfiles, genes, counts, options.outfile)
 
 def write_output(bamfiles, genes, counts,outfile):
