@@ -12,8 +12,6 @@ def main():
 
     genes,valid_introns = read_canonical_splices(options.gtf)
 
-    breakpoint()
-
     counts = []
 
     for bamfile in options.bamfiles:
@@ -24,9 +22,66 @@ def main():
 def quantitate_bam_file(file,genes, introns):
     bam = pysam.AlignmentFile(file, "rb")
 
+    total_reads = 0
+    unmapped = 0
+    low_mapq = 0
+    unspliced = 0
+    non_canonical = 0
+    canonical = 0
+
+
     for read in bam.fetch(until_eof=True):
-        if read.mapping_quality < options.mapq:
+        total_reads += 1
+
+        if not read.is_mapped:
+            unmapped += 1
             continue
+
+        if read.mapping_quality < options.mapq:
+            low_mapq += 1
+            continue
+
+        cigar_tuples = read.cigartuples
+        if len(cigar_tuples) == 1:
+            unspliced += 1
+            continue
+
+        # Now we work our way through the tuples, to find
+        # splice sites.
+
+        chromosome = read.reference_name
+
+        current_position = read.reference_start
+
+        for opcode,oplength in cigar_tuples:
+            # We go through the different codes
+            if opcode == 0:
+                # Match to the reference
+                current_position += oplength
+
+            elif opcode == 1:
+                # Insertion
+                pass
+
+            elif opcode == 2:
+                # Deletion
+                current_position += oplength
+            
+            elif opcode == 3:
+                # A splice site.
+                splice_start = current_position+1
+                splice_end = current_position+oplength
+                current_position += oplength
+
+                # Let's see if this is a valid splice
+                splice_string = f"{chromosome}:{splice_start}-{splice_end}"
+                print("Checking",splice_string)
+                if splice_string in introns:
+                    print("Hit to",introns[splice_string])
+                else:
+                    print("No hit")
+
+
 
 def read_canonical_splices(file):
 
