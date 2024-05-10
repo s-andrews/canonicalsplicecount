@@ -15,8 +15,14 @@ def main():
 
     counts = []
 
+    statsfile = open(options.statsfile,"wt", encoding="utf8")
+    stats_header = ["File","Total_Seqs","Unmapped","Low_MAPQ","Unspliced","Non_Canonical","Valid"]
+    print("\t".join(stats_header),file=statsfile)
+
     for bamfile in options.bamfiles:
-        counts.append(quantitate_bam_file(bamfile, genes, valid_introns))
+        counts.append(quantitate_bam_file(bamfile, genes, valid_introns, statsfile))
+
+    statsfile.close()
 
     write_output(options.bamfiles, genes, counts, options.outfile)
 
@@ -31,7 +37,7 @@ def write_output(bamfiles, genes, counts,outfile):
         print("\t".join(headerline), file=out)
 
         for gene in genes:
-            dataline = []
+            dataline = [gene]
             for x in counts:
                 dataline.append(str(x[gene]))
 
@@ -39,7 +45,7 @@ def write_output(bamfiles, genes, counts,outfile):
 
 
 
-def quantitate_bam_file(file,genes, introns):
+def quantitate_bam_file(file,genes, introns, statsfile):
 
     if not options.quiet:
         print("Quantitating",file, file=sys.stderr)
@@ -132,6 +138,10 @@ def quantitate_bam_file(file,genes, introns):
             canonical += 1
             counts[found_gene] += 1
 
+    # Print out the stats
+    statsline = [file, total_reads, unmapped, low_mapq, unspliced, non_canonical, canonical]
+
+    print("\t".join([str(x) for x in statsline]), file=statsfile)
 
     return counts
 
@@ -258,6 +268,7 @@ def read_options():
     parser.add_argument('--mapq', type=int, default=20, help="Minimum MAPQ value to use (default 20)")
     parser.add_argument('--biotype', type=str, default="protein_coding", help="Gene biotype to use (default protein_coding)")
     parser.add_argument('--outfile', type=str, help="The output file name for the assembled counts", required=True)    
+    parser.add_argument('--statsfile', type=str, help="The output file for quantitation statistics", required=True)    
     parser.add_argument('--gtf', type=str, help="The GTF file from which to read canonical splice sites", required=True)
     parser.add_argument("bamfiles", nargs="+", type=str, help="The BAM files to analyse")
 
