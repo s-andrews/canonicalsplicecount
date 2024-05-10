@@ -3,6 +3,7 @@
 import pysam
 import argparse
 import gzip
+import sys
 
 VERSION = "1.0"
 
@@ -17,9 +18,34 @@ def main():
     for bamfile in options.bamfiles:
         counts.append(quantitate_bam_file(bamfile, genes, valid_introns))
 
-    write_output(counts)
+    breakpoint()
+
+    write_output(options.bamfiles, genes, counts, options.outfile)
+
+def write_output(bamfiles, genes, counts,outfile):
+    if not options.quiet:
+        print("Writing results to",outfile, file=sys.stderr)
+
+    with open(outfile,"wt",encoding="utf8") as out:
+        # Header
+        headerline = ["Gene"]
+        headerline.extend(bamfiles)
+        print("\t".join(headerline), file=out)
+
+        for gene in genes:
+            dataline = []
+            for x in counts:
+                dataline.append(str(x[gene]))
+
+            print("\t".join(dataline), file=out)
+
+
 
 def quantitate_bam_file(file,genes, introns):
+
+    if not options.quiet:
+        print("Quantitating",file, file=sys.stderr)
+
     bam = pysam.AlignmentFile(file, "rb")
 
     total_reads = 0
@@ -29,9 +55,18 @@ def quantitate_bam_file(file,genes, introns):
     non_canonical = 0
     canonical = 0
 
+    counts = {}
+
+    for gene in genes:
+        counts[gene] = 0
+
 
     for read in bam.fetch(until_eof=True):
         total_reads += 1
+
+        if total_reads % 1000000 == 0:
+            if not options.quiet:
+                print("Read",int(total_reads/1000000),"million reads", file=sys.stderr)
 
         if not read.is_mapped:
             unmapped += 1
@@ -50,8 +85,9 @@ def quantitate_bam_file(file,genes, introns):
         # splice sites.
 
         chromosome = read.reference_name
-
         current_position = read.reference_start
+
+        found_gene = None
 
         for opcode,oplength in cigar_tuples:
             # We go through the different codes
@@ -75,15 +111,36 @@ def quantitate_bam_file(file,genes, introns):
 
                 # Let's see if this is a valid splice
                 splice_string = f"{chromosome}:{splice_start}-{splice_end}"
-                print("Checking",splice_string)
                 if splice_string in introns:
-                    print("Hit to",introns[splice_string])
+                    if found_gene is None:
+                        found_gene = introns[splice_string]
+                    else:
+                        if introns[splice_string] != found_gene:
+                            # We've got a mix of genes, so we'll bin this
+                            found_gene = "NON_CANONICAL"
+                            break
                 else:
-                    print("No hit")
+                    # It's a splice but not as we know it
+                    found_gene = "NON_CANONICAL"
+                    break
+
+        if found_gene is None:
+            # Turns out there wasn't a splice in here after all
+            unspliced += 1
+        elif found_gene == "NON_CANONICAL":
+            non_canonical +=1
+        else:
+            # We can add to the count for this gene
+            canonical += 1
+            counts[found_gene] += 1
 
 
+    return counts
 
 def read_canonical_splices(file):
+
+    if not options.quiet:
+        print("Reading introns from",file, file=sys.stderr)
 
     genes = set()
 
@@ -174,6 +231,10 @@ def read_canonical_splices(file):
             final_gene_list.append(gene)
 
     final_gene_list.sort()
+
+
+    if not options.quiet:
+        print("Found",len(final_gene_list),"genes to quantitate", file=sys.stderr)
 
     final_introns = {}
 
